@@ -943,10 +943,19 @@ function draw() {
   ctx.restore();
 }
 
-function loop() {
-  update();
+// Fixed timestep: always simulate at 60 ticks/s regardless of display frame rate.
+// At 30 fps each rendered frame runs 2 update() ticks; at 60 fps it runs 1.
+const TIMESTEP = 1000 / 60;
+let _lastTime = 0;
+let _accum    = 0;
+
+function loop(ts = 0) {
+  const dt = Math.min(ts - _lastTime, 100); // cap prevents spiral-of-death after tab sleep
+  _lastTime = ts;
+  _accum   += dt;
+  while (_accum >= TIMESTEP) { update(); _accum -= TIMESTEP; }
   draw();
   requestAnimationFrame(loop);
 }
 
-loadAssets(loop);
+loadAssets(() => requestAnimationFrame(loop));
