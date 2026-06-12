@@ -199,6 +199,7 @@ function triggerAttack() {
 function startGame() {
   phase = 'playing';
   playMusic('game');
+  document.body.classList.add('game-on');
   score = 0; lives = 3; cameraX = 0; worldDist = 0; shakeFrames = 0;
   player = { ...PLAYER_DEFAULTS };
   enemies = []; bullets = []; pickups = []; particles = []; shootingStars = [];
@@ -358,32 +359,74 @@ const touch = { left: false, right: false, jump: false, block: false };
 function bindTouchBtn(id, onDown, onUp) {
   const el = document.getElementById(id);
   if (!el) return;
-  const down = e => {
-    e.preventDefault();
-    el.classList.add('active');
-    if (phase === 'title' || phase === 'gameover') {
-      if (phase === 'title') playMusic('title');
-      startGame();
-    }
-    onDown();
-  };
-  const up = e => { e.preventDefault(); el.classList.remove('active'); onUp(); };
+  const down = e => { e.preventDefault(); el.classList.add('active');    onDown(); };
+  const up   = e => { e.preventDefault(); el.classList.remove('active'); onUp();   };
   el.addEventListener('touchstart',  down, { passive: false });
   el.addEventListener('touchend',    up,   { passive: false });
   el.addEventListener('touchcancel', up,   { passive: false });
 }
 
-bindTouchBtn('btn-left',   () => { touch.left  = true;  }, () => { touch.left  = false; });
-bindTouchBtn('btn-right',  () => { touch.right = true;  }, () => { touch.right = false; });
-bindTouchBtn('btn-jump',   () => { touch.jump  = true;  }, () => { touch.jump  = false; });
-bindTouchBtn('btn-block',  () => { touch.block = true;  }, () => { touch.block = false; });
-bindTouchBtn('btn-attack', () => { triggerAttack();      }, () => {});
+// Virtual joystick
+let _joyId = null;
+const _joyBase  = document.getElementById('joystick-base');
+const _joyThumb = document.getElementById('joystick-thumb');
+
+function _joyMove(clientX, clientY) {
+  const r    = _joyBase.getBoundingClientRect();
+  const cx   = r.left + r.width  / 2;
+  const cy   = r.top  + r.height / 2;
+  const maxR = r.width / 2 - _joyThumb.offsetWidth / 2;
+  let dx = clientX - cx, dy = clientY - cy;
+  const dist = Math.hypot(dx, dy);
+  if (dist > maxR) { dx = dx / dist * maxR; dy = dy / dist * maxR; }
+  _joyThumb.style.transform = `translate(${dx}px, ${dy}px)`;
+  const thr = maxR * 0.25;
+  touch.left  = dx < -thr;
+  touch.right = dx >  thr;
+}
+
+function _joyReset() {
+  _joyThumb.style.transform = '';
+  touch.left = touch.right = false;
+}
+
+if (_joyBase) {
+  _joyBase.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (_joyId !== null) return;
+    const t = e.changedTouches[0];
+    _joyId = t.identifier;
+    _joyMove(t.clientX, t.clientY);
+  }, { passive: false });
+}
+
+document.addEventListener('touchmove', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === _joyId) { e.preventDefault(); _joyMove(t.clientX, t.clientY); return; }
+  }
+}, { passive: false });
+
+document.addEventListener('touchend', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === _joyId) { _joyId = null; _joyReset(); return; }
+  }
+}, { passive: false });
+
+document.addEventListener('touchcancel', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === _joyId) { _joyId = null; _joyReset(); return; }
+  }
+}, { passive: false });
+
+bindTouchBtn('btn-jump',   () => { touch.jump  = true; }, () => { touch.jump  = false; });
+bindTouchBtn('btn-block',  () => { touch.block = true; }, () => { touch.block = false; });
+bindTouchBtn('btn-attack', () => { triggerAttack();     }, () => {});
 bindTouchBtn('btn-pause',  () => { if (phase === 'playing' || phase === 'paused') togglePause(); }, () => {});
 
 // Tap canvas background to start from title / game-over
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
-  if (phase === 'title')    { playMusic('title'); startGame(); }
+  if (phase === 'title')         { playMusic('title'); startGame(); }
   else if (phase === 'gameover') startGame();
 }, { passive: false });
 
@@ -534,7 +577,7 @@ function update() {
         playSound('player_hit');
         if (player.hp <= 0) {
           lives--;
-          if (lives <= 0) { phase = 'gameover'; playMusic(null); return; }
+          if (lives <= 0) { phase = 'gameover'; playMusic(null); document.body.classList.remove('game-on'); return; }
           player = { ...PLAYER_DEFAULTS, x: cameraX + 120, y: GROUND, invincible: 150 };
           return;
         }
