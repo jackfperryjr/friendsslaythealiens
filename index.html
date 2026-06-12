@@ -2,12 +2,21 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Friends Slay the Aliens</title>
 <link rel="stylesheet" href="game.css">
 <link rel="icon" href="favicon.ico" type="image/x-icon">
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="touch-controls">
+  <button class="touch-btn" id="btn-left">◀</button>
+  <button class="touch-btn" id="btn-right">▶</button>
+  <button class="touch-btn" id="btn-jump">▲</button>
+  <button class="touch-btn" id="btn-attack">ATK</button>
+  <button class="touch-btn" id="btn-block">BLK</button>
+  <button class="touch-btn" id="btn-pause">⏸</button>
+</div>
 <div id="hint">ARROWS/WASD: Move &nbsp;|&nbsp; SPACE/W: Jump &nbsp;|&nbsp; F/Z: Attack &nbsp;|&nbsp; SHIFT: Block &nbsp;|&nbsp; Walk over glowing orb to grab weapon &nbsp;|&nbsp; Controller: L-Stick/D-Pad · Circle=Jump · Square=Attack · Cross=Block</div>
 <script src="game.js" defer></script>
 </body>
