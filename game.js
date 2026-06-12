@@ -5,10 +5,10 @@ const GROUND = H - 90;
 const SPR = 128;        // display size of one character frame
 const FRAME_SRC = 128;  // source size of one frame in the 256×256 sprite sheet (2×2 grid)
 const FOOT_INSET = 15;  // pixels from bottom of sprite frame to the visual feet
-const GRAVITY = 0.25;
-const FALL_MULTIPLIER = 0.10; // heavier gravity on the way down for a snappier arc
-const JUMP_FORCE = -10;
-const WALK_SPEED = 1.75;
+const GRAVITY = 0.6;
+const FALL_MULTIPLIER = 0.10;
+const JUMP_FORCE = -16;
+const WALK_SPEED = 6.5;
 
 // Background: natural size 5623x1536, scale to canvas height
 const BG_SCALE = H / 1536;
@@ -68,7 +68,7 @@ let player = { ...PLAYER_DEFAULTS };
 
 const WEAPON_RANGE  = { none: 90,  hammer: 110, sword: 140, pistol: 0  };
 const WEAPON_DAMAGE = { none: 1,   hammer: 2,   sword: 2,   pistol: 1  };
-const WEAPON_COOL   = { none: 30,  hammer: 40,  sword: 28,  pistol: 22 };
+const WEAPON_COOL   = { none: 15,  hammer: 20,  sword: 14,  pistol: 11 };
 const WEAPON_COLOR  = { pistol: '#4af', hammer: '#fa0', sword: '#0ef'  };
 const WEAPON_LABEL  = { pistol: 'P',    hammer: 'H',    sword: 'S'     };
 
@@ -96,9 +96,9 @@ let pickupSpawnDist = 800;
 
 // Enemy config by type (1-3)
 const ENEMY_CFG = [
-  { hp: 2, speed: 0.7, damage: 0.25, scale: 1.0,  score: 10 },
-  { hp: 4, speed: 0.5, damage: 0.25, scale: 1.15, score: 20 },
-  { hp: 7, speed: 0.4, damage: 0.5,  scale: 1.35, score: 40 },
+  { hp: 2, speed: 2.0, damage: 0.25, scale: 1.0,  score: 10 },
+  { hp: 4, speed: 1.5, damage: 0.25, scale: 1.15, score: 20 },
+  { hp: 7, speed: 1.1, damage: 0.5,  scale: 1.35, score: 40 },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -110,8 +110,8 @@ function spawnParticles(x, y, color, n = 8) {
       x, y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed - 2,
-      life: 20 + Math.random() * 20 | 0,
-      maxLife: 40,
+      life: 10 + Math.random() * 10 | 0,
+      maxLife: 20,
       color,
       r: 3 + Math.random() * 4,
     });
@@ -128,7 +128,7 @@ function spawnEnemy() {
     hp: cfg.hp, maxHp: cfg.hp,
     damage: cfg.damage, scale: cfg.scale, scoreVal: cfg.score,
     hitFlash: 0, dead: false, walkCycle: 0,
-    shootTimer: 90 + Math.random() * 120 | 0, // staggered first shot
+    shootTimer: 45 + Math.random() * 60 | 0, // staggered first shot
     attackAnim: 0,
   });
 }
@@ -158,7 +158,7 @@ function doMeleeAttack() {
 
 function damageEnemy(e, dmg) {
   e.hp -= dmg;
-  e.hitFlash = 10;
+  e.hitFlash = 5;
   score += dmg * 2; // points per hit
   playSound('enemy_hit');
   spawnParticles(e.x, e.y - SPR * 0.5 * e.scale, '#f84', 6);
@@ -178,18 +178,18 @@ function triggerAttack() {
 
   if (player.weapon === 'pistol') {
     player.state = 'pistol';
-    player.attackTimer = 18;
+    player.attackTimer = 9;
     bullets.push({
       x: player.x + player.facing * 48,
       y: player.y - SPR * 0.58,
-      vx: player.facing * 13,
-      life: 55, damage: 1,
+      vx: player.facing * 26,
+      life: 28, damage: 1,
     });
     playSound('laser');
   } else {
     const stateMap = { none: 'punch', hammer: 'hammer', sword: 'sword' };
     player.state = stateMap[player.weapon] || 'punch';
-    player.attackTimer = 37;
+    player.attackTimer = 18;
     doMeleeAttack();
     playSound(player.weapon === 'hammer' ? 'hammer' : player.weapon === 'sword' ? 'sword' : 'punch');
   }
@@ -203,7 +203,7 @@ function startGame() {
   score = 0; lives = 3; cameraX = 0; worldDist = 0; shakeFrames = 0;
   player = { ...PLAYER_DEFAULTS };
   enemies = []; bullets = []; pickups = []; particles = []; shootingStars = [];
-  enemySpawnTimer = 160;
+  enemySpawnTimer = 80;
   pickupSpawnDist = 800;
 }
 
@@ -459,8 +459,8 @@ function update() {
   if (Math.random() < 0.005) {
     shootingStars.push({
       x: Math.random() * W, y: Math.random() * H * 0.45,
-      vx: -(3 + Math.random() * 5), vy: 0.5 + Math.random() * 1.5,
-      life: 30 + Math.random() * 35 | 0, maxLife: 55,
+      vx: -(6 + Math.random() * 10), vy: 1 + Math.random() * 3,
+      life: 15 + Math.random() * 18 | 0, maxLife: 28,
     });
   }
 
@@ -489,7 +489,7 @@ function update() {
   if (player.x < 60) player.x = 60;
 
   // Camera right scroll: keep player at 80% of screen when moving right
-  const scrollEdge = cameraX + W * 0.70;
+  const scrollEdge = cameraX + W * 0.80;
   if (player.x > scrollEdge) {
     const delta = player.x - scrollEdge;
     cameraX   += delta;
@@ -515,7 +515,7 @@ function update() {
   if (player.attackTimer <= 0) {
     if (!player.onGround)       player.state = 'jump';
     else if (isBlock())         { player.state = 'block'; player.blocking = true; }
-    else if (moving)            { player.state = 'walk'; player.walkCycle += 0.065; }
+    else if (moving)            { player.state = 'walk'; player.walkCycle += 0.13; }
     else                          player.state = 'idle';
     if (player.state !== 'block') player.blocking = false;
   }
@@ -526,8 +526,8 @@ function update() {
   const SPAWN_ENEMIES = true;
   if (SPAWN_ENEMIES && --enemySpawnTimer <= 0) {
     spawnEnemy();
-    const baseInterval = Math.max(200, 500 - Math.floor(worldDist / 500));
-    enemySpawnTimer = baseInterval + Math.random() * 120 | 0;
+    const baseInterval = Math.max(100, 250 - Math.floor(worldDist / 500));
+    enemySpawnTimer = baseInterval + Math.random() * 60 | 0;
   }
 
   // Update enemies
@@ -537,25 +537,21 @@ function update() {
     if (e.attackAnim > 0) {
       // Stand still, cycle alien_01 frames, fire red projectile at midpoint
       e.attackAnim--;
-      e.walkCycle += 0.065;
-      if (e.attackAnim === 30 && (e.x - cameraX) >= -30 && (e.x - cameraX) <= W + 30) {
-        const bx0 = e.x + (Math.sign(player.x - e.x) || 1) * 30;
+      e.walkCycle += 0.13;
+      if (e.attackAnim === 15 && (e.x - cameraX) >= -30 && (e.x - cameraX) <= W + 30) {
+        const dir = Math.sign(player.x - e.x) || 1;
+        const bx0 = e.x + dir * 30;
         const by0 = e.y - SPR * e.scale * 0.55;
-        const tdx = player.x - bx0;
-        const tdy = (player.y - SPR * 0.5) - by0;
-        const t   = Math.max(40, Math.min(90, Math.abs(tdx) / 6)) | 0;
-        const bvx = tdx / t;
-        const bvy = (tdy - 0.5 * GRAVITY * t * t) / t; // aim for player torso
-        bullets.push({ x: bx0, y: by0, vx: bvx, vy: bvy, life: t + 20, damage: e.damage, isEnemy: true });
+        bullets.push({ x: bx0, y: by0, vx: dir * 9, vy: -8, life: 50, damage: e.damage, isEnemy: true });
         playSound('laser');
       }
     } else {
       e.shootTimer--;
       if (e.shootTimer <= 0) {
-        e.attackAnim = 60;
-        e.shootTimer = 120;
+        e.attackAnim = 30;
+        e.shootTimer = 60;
       } else {
-        e.walkCycle += 0.065;
+        e.walkCycle += 0.13;
         if (Math.abs(dx) > 55) e.x += Math.sign(dx) * e.vx;
       }
     }
@@ -571,14 +567,14 @@ function update() {
       if (player.invincible <= 0 && Math.abs(b.x - player.x) < 35 && Math.abs(b.y - (player.y - SPR * 0.5)) < SPR * 0.55) {
         const dmgMult = player.blocking ? 0.25 : 1;
         player.hp -= b.damage * dmgMult;
-        player.invincible = 70;
-        shakeFrames = 12;
+        player.invincible = 35;
+        shakeFrames = 6;
         b.life = 0;
         playSound('player_hit');
         if (player.hp <= 0) {
           lives--;
           if (lives <= 0) { phase = 'gameover'; playMusic(null); document.body.classList.remove('game-on'); return; }
-          player = { ...PLAYER_DEFAULTS, x: cameraX + 120, y: GROUND, invincible: 150 };
+          player = { ...PLAYER_DEFAULTS, x: cameraX + 120, y: GROUND, invincible: 75 };
           return;
         }
       }
@@ -614,7 +610,7 @@ function update() {
   // Particles
   for (const p of particles) {
     p.x += p.vx; p.y += p.vy;
-    p.vy += 0.18; p.life--;
+    p.vy += 0.36; p.life--;
   }
   particles = particles.filter(p => p.life > 0);
 
@@ -643,9 +639,9 @@ function calcAnimFrame(p) {
     // Spreads 4 frames evenly across the full attack window.
     // ATTACK_ANIM_DURATION must match attackTimer in triggerAttack().
     // Raise ATTACK_ANIM_DURATION or lower the divisor (9) to slow the frames down.
-    const ATTACK_ANIM_DURATION = 37;
+    const ATTACK_ANIM_DURATION = 18;
     const elapsed = ATTACK_ANIM_DURATION - p.attackTimer;
-    return Math.min(3, Math.floor(elapsed / 9));
+    return Math.min(3, Math.floor(elapsed / 4));
   }
   if (p.state === 'walk') return Math.floor(p.walkCycle) % 4;
   return 0; // idle
