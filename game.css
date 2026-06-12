@@ -12,14 +12,14 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
   position: fixed; inset: 0;
   pointer-events: none;
   z-index: 10;
+  display: none;
 }
 
-/* Hide on true pointer/mouse devices */
 @media (hover: hover) and (pointer: fine) {
-  #touch-controls { display: none; }
   #hint { display: block; }
 }
 @media (hover: none), (pointer: coarse) {
+  body.game-on #touch-controls { display: block; }
   #hint { display: none; }
 }
 
@@ -28,30 +28,57 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
   pointer-events: all;
   touch-action: none;
   border-radius: 50%;
-  background: rgba(255,255,255,0.12);
-  border: 2px solid rgba(255,255,255,0.28);
-  color: rgba(255,255,255,0.65);
-  font-family: monospace;
+  background: rgba(255,255,255,0.08);
+  border: 2.5px solid rgba(255,255,255,0.22);
+  color: rgba(255,255,255,0.7);
+  font-family: sans-serif;
   font-weight: bold;
   display: flex; align-items: center; justify-content: center;
   user-select: none; -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
-  transition: background 0.06s, border-color 0.06s;
-}
-.touch-btn.active {
-  background: rgba(255,255,255,0.32);
-  border-color: rgba(255,255,255,0.7);
+  transition: background 0.07s;
 }
 
-/* Left-side: movement */
-#btn-left  { width: 13vmin; height: 13vmin; font-size: 4.5vmin; bottom: 4vmin; left: 3vmin; }
-#btn-right { width: 13vmin; height: 13vmin; font-size: 4.5vmin; bottom: 4vmin; left: 18vmin; }
+/* PlayStation button colours */
+.btn-circle { color: #ff6b6b; border-color: #ff6b6b; background: rgba(255,107,107,0.10); }
+.btn-square { color: #e878d8; border-color: #e878d8; background: rgba(232,120,216,0.10); }
+.btn-cross  { color: #6baae8; border-color: #6baae8; background: rgba(107,170,232,0.10); }
+.btn-circle.active { background: rgba(255,107,107,0.38); }
+.btn-square.active { background: rgba(232,120,216,0.38); }
+.btn-cross.active  { background: rgba(107,170,232,0.38); }
 
-/* Right-side: actions */
-#btn-jump   { width: 15vmin; height: 15vmin; font-size: 5vmin;   bottom: 3.5vmin; right: 3vmin; }
-#btn-attack { width: 11vmin; height: 11vmin; font-size: 2.4vmin; bottom: 5.5vmin; right: 21vmin; }
-#btn-block  { width: 10vmin; height: 10vmin; font-size: 2.2vmin; bottom: 5.5vmin; right: 34vmin; }
+/* Left-side: virtual joystick */
+#joystick-base {
+  position: absolute;
+  bottom: 3vmin; left: 3vmin;
+  width: 26vmin; height: 26vmin;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.05);
+  border: 2px solid rgba(255,255,255,0.14);
+  pointer-events: all;
+  touch-action: none;
+}
+#joystick-thumb {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 11vmin; height: 11vmin;
+  margin-top: -5.5vmin; margin-left: -5.5vmin;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.22);
+  border: 2px solid rgba(255,255,255,0.45);
+  pointer-events: none;
+}
+
+/* Right-side: partial-diamond layout
+       [□]
+   [✕]    [○]  */
+#btn-jump   { width: 16vmin; height: 16vmin; font-size: 7.5vmin; bottom: 4vmin;  right: 3vmin;   }
+#btn-attack { width: 13vmin; height: 13vmin; font-size: 6vmin;   bottom: 22vmin; right: 4.5vmin; }
+#btn-block  { width: 13vmin; height: 13vmin; font-size: 6vmin;   bottom: 4vmin;  right: 21vmin;  }
 
 /* Top-right: pause */
-#btn-pause  { width: 9vmin; height: 9vmin; font-size: 3.5vmin; top: 3vmin; right: 3vmin;
-              border-radius: 8px; }
+#btn-pause {
+  width: 9vmin; height: 9vmin; font-size: 3.8vmin;
+  top: 3vmin; right: 3vmin;
+  border-radius: 8px;
+}
