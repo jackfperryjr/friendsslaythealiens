@@ -352,10 +352,45 @@ function pollGamepad() {
   _padPrevStart  = startNow;
 }
 
-function isLeft()  { return keys['ArrowLeft']  || keys['KeyA']  || pad.left;  }
-function isRight() { return keys['ArrowRight'] || keys['KeyD']  || pad.right; }
-function isJump()  { return keys['ArrowUp'] || keys['KeyW'] || keys['Space'] || pad.jump; }
-function isBlock() { return (keys['ShiftLeft'] || keys['ShiftRight'] || pad.block) && player.onGround && player.attackTimer <= 0; }
+// ─── Input: Touch ─────────────────────────────────────────────────────────────
+const touch = { left: false, right: false, jump: false, block: false };
+
+function bindTouchBtn(id, onDown, onUp) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const down = e => {
+    e.preventDefault();
+    el.classList.add('active');
+    if (phase === 'title' || phase === 'gameover') {
+      if (phase === 'title') playMusic('title');
+      startGame();
+    }
+    onDown();
+  };
+  const up = e => { e.preventDefault(); el.classList.remove('active'); onUp(); };
+  el.addEventListener('touchstart',  down, { passive: false });
+  el.addEventListener('touchend',    up,   { passive: false });
+  el.addEventListener('touchcancel', up,   { passive: false });
+}
+
+bindTouchBtn('btn-left',   () => { touch.left  = true;  }, () => { touch.left  = false; });
+bindTouchBtn('btn-right',  () => { touch.right = true;  }, () => { touch.right = false; });
+bindTouchBtn('btn-jump',   () => { touch.jump  = true;  }, () => { touch.jump  = false; });
+bindTouchBtn('btn-block',  () => { touch.block = true;  }, () => { touch.block = false; });
+bindTouchBtn('btn-attack', () => { triggerAttack();      }, () => {});
+bindTouchBtn('btn-pause',  () => { if (phase === 'playing' || phase === 'paused') togglePause(); }, () => {});
+
+// Tap canvas background to start from title / game-over
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (phase === 'title')    { playMusic('title'); startGame(); }
+  else if (phase === 'gameover') startGame();
+}, { passive: false });
+
+function isLeft()  { return keys['ArrowLeft']  || keys['KeyA']  || pad.left  || touch.left;  }
+function isRight() { return keys['ArrowRight'] || keys['KeyD']  || pad.right || touch.right; }
+function isJump()  { return keys['ArrowUp'] || keys['KeyW'] || keys['Space'] || pad.jump || touch.jump; }
+function isBlock() { return (keys['ShiftLeft'] || keys['ShiftRight'] || pad.block || touch.block) && player.onGround && player.attackTimer <= 0; }
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 function update() {
