@@ -198,12 +198,32 @@ function triggerAttack() {
 // ─── Init / Reset ─────────────────────────────────────────────────────────────
 function startGame() {
   phase = 'playing';
+  playMusic('game');
   score = 0; lives = 3; cameraX = 0; worldDist = 0; shakeFrames = 0;
   player = { ...PLAYER_DEFAULTS };
   enemies = []; bullets = []; pickups = []; particles = []; shootingStars = [];
   enemySpawnTimer = 160;
   pickupSpawnDist = 800;
 }
+
+// ─── Music ────────────────────────────────────────────────────────────────────
+const _musicTracks = {
+  title: Object.assign(new Audio('assets/music/title_loop.mp3'), { loop: true, volume: 0.5 }),
+  game:  Object.assign(new Audio('assets/music/game_loop.mp3'),  { loop: true, volume: 0.45 }),
+};
+let _currentMusic = null;
+let _currentAudio = null;
+
+function playMusic(name) {
+  if (_currentMusic === name) return;
+  if (_currentAudio) { _currentAudio.pause(); _currentAudio.currentTime = 0; }
+  _currentMusic = name;
+  _currentAudio = _musicTracks[name] ?? null;
+  if (_currentAudio) _currentAudio.play().catch(() => {});
+}
+
+function pauseMusic()  { if (_currentAudio) _currentAudio.pause(); }
+function resumeMusic() { if (_currentAudio) _currentAudio.play().catch(() => {}); }
 
 // ─── Audio (Web Audio API — lazy-init on first user gesture) ─────────────────
 let _ac = null;
@@ -279,12 +299,14 @@ function playSound(type) {
 }
 
 function togglePause() {
-  phase = (phase === 'playing') ? 'paused' : 'playing';
+  if (phase === 'playing') { phase = 'paused';  pauseMusic();  }
+  else                     { phase = 'playing'; resumeMusic(); }
 }
 
 // ─── Input: Keyboard ──────────────────────────────────────────────────────────
 const keys = {};
 document.addEventListener('keydown', e => {
+  if (phase === 'title') playMusic('title');
   if (keys[e.code]) return;
   keys[e.code] = true;
   if (phase === 'title'    && (e.code === 'Space' || e.code === 'Enter')) { startGame(); return; }
@@ -338,6 +360,9 @@ function isBlock() { return (keys['ShiftLeft'] || keys['ShiftRight'] || pad.bloc
 // ─── Update ───────────────────────────────────────────────────────────────────
 function update() {
   pollGamepad();
+
+  const anyPadInput = pad.left || pad.right || pad.jump || pad.block || padEdge.attack || padEdge.start;
+  if (phase === 'title' && anyPadInput) playMusic('title');
 
   if (padEdge.start) {
     if (phase === 'title' || phase === 'gameover') { startGame(); return; }
@@ -474,7 +499,7 @@ function update() {
         playSound('player_hit');
         if (player.hp <= 0) {
           lives--;
-          if (lives <= 0) { phase = 'gameover'; return; }
+          if (lives <= 0) { phase = 'gameover'; playMusic(null); return; }
           player = { ...PLAYER_DEFAULTS, x: cameraX + 120, y: GROUND, invincible: 150 };
           return;
         }
