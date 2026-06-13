@@ -75,6 +75,7 @@ const WEAPON_LABEL  = { pistol: 'P',    hammer: 'H',    sword: 'S'     };
 
 function playerSprite() {
   const { state } = player;
+  if (state === 'idle')   return imgs.boy3;
   if (state === 'jump')   return imgs.boy2;
   if (state === 'block')  return imgs.boy4;
   if (state === 'punch')  return imgs.boy4;
