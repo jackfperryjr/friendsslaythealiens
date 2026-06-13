@@ -51,6 +51,7 @@ let score = 0;
 let lives = 3;
 let cameraX = 0;
 let worldDist = 0;
+let cameraFacing = 1; // smoothed look-ahead direction, lerps toward player.facing
 let shakeFrames = 0;
 
 // ─── Player ───────────────────────────────────────────────────────────────────
@@ -200,7 +201,7 @@ function startGame() {
   phase = 'playing';
   playMusic('game');
   document.body.classList.add('game-on');
-  score = 0; lives = 3; cameraX = 0; worldDist = 0; shakeFrames = 0;
+  score = 0; lives = 3; cameraX = 0; worldDist = 0; shakeFrames = 0; cameraFacing = 1;
   player = { ...PLAYER_DEFAULTS };
   enemies = []; bullets = []; pickups = []; particles = []; shootingStars = [];
   enemySpawnTimer = 80;
@@ -327,8 +328,8 @@ const pad = { left: false, right: false, jump: false, block: false };
 const padEdge = { attack: false, start: false };
 let _padPrevAttack = false, _padPrevStart = false;
 
-window.addEventListener('gamepadconnected',    e => { padIndex = e.gamepad.index; });
-window.addEventListener('gamepaddisconnected', e => { if (e.gamepad.index === padIndex) padIndex = -1; });
+window.addEventListener('gamepadconnected',    e => { padIndex = e.gamepad.index; document.body.classList.add('pad-on'); });
+window.addEventListener('gamepaddisconnected', e => { if (e.gamepad.index === padIndex) { padIndex = -1; document.body.classList.remove('pad-on'); } });
 
 function pollGamepad() {
   if (padIndex < 0) return;
@@ -488,23 +489,18 @@ function update() {
   // Hard world left wall
   if (player.x < 60) player.x = 60;
 
-  // Camera right scroll: keep player at 80% of screen when moving right
-  const scrollEdge = cameraX + W * 0.80;
-  if (player.x > scrollEdge) {
-    const delta = player.x - scrollEdge;
-    cameraX   += delta;
-    player.x   = scrollEdge;
-    worldDist += delta;
-    pickupSpawnDist -= delta;
+  // Smooth leading camera — target keeps player just behind centre,
+  // offset forward in the direction they're facing.
+  const prevCameraX = cameraX;
+  cameraFacing += (player.facing - cameraFacing) * 0.05;
+  const targetCamX  = Math.max(0, player.x - W * 0.5 + cameraFacing * W * 0.15);
+  cameraX += (targetCamX - cameraX) * 0.08;
+  cameraX  = Math.max(0, cameraX);
+  const camAdvance = cameraX - prevCameraX;
+  if (camAdvance > 0) {
+    worldDist       += camAdvance;
+    pickupSpawnDist -= camAdvance;
     if (pickupSpawnDist <= 0) spawnPickup();
-  }
-
-  // Camera left scroll: keep player at 20% of screen when moving left
-  const leftScrollEdge = cameraX + W * 0.20;
-  if (player.x < leftScrollEdge && cameraX > 0) {
-    const scrollAmt = Math.min(leftScrollEdge - player.x, cameraX);
-    cameraX  -= scrollAmt;
-    player.x += scrollAmt;
   }
 
   // Player state machine

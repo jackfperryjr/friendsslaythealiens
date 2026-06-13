@@ -19,7 +19,7 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
   #hint { display: block; }
 }
 @media (hover: none), (pointer: coarse) {
-  body.game-on #touch-controls { display: block; }
+  body.game-on:not(.pad-on) #touch-controls { display: block; }
   #hint { display: none; }
 }
 
