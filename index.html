@@ -3,9 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#000000">
 <title>Friends Slay the Aliens</title>
+<link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="game.css">
 <link rel="icon" href="favicon.ico" type="image/x-icon">
+<link rel="apple-touch-icon" href="assets/icon.png">
 </head>
 <body>
 <canvas id="game"></canvas>
@@ -18,5 +21,10 @@
 </div>
 <div id="hint">ARROWS/WASD: Move &nbsp;|&nbsp; SPACE/W: Jump &nbsp;|&nbsp; F/Z: Attack &nbsp;|&nbsp; SHIFT: Block &nbsp;|&nbsp; Walk over glowing orb to grab weapon &nbsp;|&nbsp; Controller: L-Stick/D-Pad · Circle=Jump · Square=Attack · Cross=Block</div>
 <script src="game.js" defer></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js');
+  }
+</script>
 </body>
 </html>
