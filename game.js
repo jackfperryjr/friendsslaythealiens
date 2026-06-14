@@ -31,6 +31,7 @@ const ASSET_MAP = {
   boy1:'assets/character/boy_01.png', boy2:'assets/character/boy_02.png',
   boy3:'assets/character/boy_03.png', boy4:'assets/character/boy_04.png',
   boy5:'assets/character/boy_05.png', boy6:'assets/character/boy_06.png',
+  boy7:'assets/character/boy_07.png', boy8:'assets/character/boy_08.png',
   alien1:'assets/enemies/alien_01.png', alien2:'assets/enemies/alien_02.png',
   alien3:'assets/enemies/alien_03.png',
 };
@@ -54,27 +55,37 @@ let worldDist = 0;
 let cameraFacing = 1; // smoothed look-ahead direction, lerps toward player.facing
 let shakeFrames = 0;
 
+// ─── Stats ────────────────────────────────────────────────────────────────────
+let statsTimePlayed      = 0; // frames
+let statsWeaponsPickedUp = { pistol: 0, hammer: 0, sword: 0, gatling: 0, knife: 0 };
+let statsKills           = { none: 0, pistol: 0, hammer: 0, sword: 0, gatling: 0, knife: 0 };
+let statsHeartsPickedUp  = 0;
+let gameOverDelay        = 0; // frames before retry input is accepted
+
 // ─── Player ───────────────────────────────────────────────────────────────────
 const PLAYER_DEFAULTS = {
   x: 160, y: GROUND, vx: 0, vy: 0,
   onGround: true, facing: 1,
-  state: 'idle', // idle walk jump punch pistol hammer sword block
-  weapon: 'none', // none pistol hammer sword
+  state: 'idle', // idle walk jump punch pistol hammer sword gatling block
+  weapon: 'none', // none pistol hammer sword gatling knife
   hp: 5, maxHp: 5,
   attackTimer: 0, attackCooldown: 0, invincible: 0,
-  blocking: false,
-  walkCycle: 0, animFrame: 0,
+  blocking: false, fieldTimer: 180, fieldCooldown: 0,
+  walkCycle: 0, animFrame: 0, gatlingFrame: 0,
+  phaseFrame: 0, phaseDir: 0, phaseHold: 0, // knife phase: dir 0=idle 1=in -1=out, hold=peak pause
 };
 let player = { ...PLAYER_DEFAULTS };
 
-const WEAPON_RANGE  = { none: 90,  hammer: 110, sword: 140, pistol: 0  };
-const WEAPON_DAMAGE = { none: 1,   hammer: 2,   sword: 2,   pistol: 1  };
-const WEAPON_COOL   = { none: 15,  hammer: 20,  sword: 14,  pistol: 11 };
-const WEAPON_COLOR  = { pistol: '#4af', hammer: '#fa0', sword: '#0ef'  };
-const WEAPON_LABEL  = { pistol: 'P',    hammer: 'H',    sword: 'S'     };
+const WEAPON_RANGE  = { none: 90,  hammer: 110, sword: 140, pistol: 0,  gatling: 0,  knife: 0   };
+const WEAPON_DAMAGE = { none: 1,   hammer: 2,   sword: 2,   pistol: 1,  gatling: 1,  knife: 999 };
+const WEAPON_COOL   = { none: 15,  hammer: 20,  sword: 14,  pistol: 11, gatling: 5,  knife: 0   };
+const WEAPON_COLOR  = { pistol: '#4af', hammer: '#fa0', sword: '#0ef', gatling: '#f80', knife: '#aff' };
+const WEAPON_LABEL  = { pistol: 'P',    hammer: 'H',    sword: 'S',    gatling: 'G',    knife: 'K'    };
 
 function playerSprite() {
   const { state } = player;
+  if (player.weapon === 'knife'   && player.phaseFrame  > 0) return imgs.boy8;
+  if (player.weapon === 'gatling' && player.gatlingFrame > 0) return imgs.boy7;
   if (state === 'idle')   return imgs.boy3;
   if (state === 'jump')   return imgs.boy2;
   if (state === 'block')  return imgs.boy4;
@@ -91,6 +102,7 @@ let bullets        = [];
 let pickups        = [];
 let particles      = [];
 let shootingStars  = [];
+let flashEffects   = [];
 
 // ─── Spawn timing ─────────────────────────────────────────────────────────────
 let enemySpawnTimer = 300;
@@ -136,7 +148,7 @@ function spawnEnemy() {
 }
 
 function spawnPickup() {
-  const types = ['pistol', 'hammer', 'sword', 'heart'];
+  const types = ['pistol', 'hammer', 'sword', 'gatling', 'knife', 'heart'];
   const type = types[Math.floor(Math.random() * types.length)];
   // 40% on ground, 40% low float (jump required), 20% high float (full jump)
   const rng = Math.random();
@@ -158,24 +170,43 @@ function doMeleeAttack() {
   }
 }
 
-function damageEnemy(e, dmg) {
+function damageEnemy(e, dmg, weaponType = player.weapon) {
   e.hp -= dmg;
   e.hitFlash = 5;
-  score += dmg * 2; // points per hit
+  score += dmg * 2;
   playSound('enemy_hit');
   spawnParticles(e.x, e.y - SPR * 0.5 * e.scale, '#f84', 6);
   if (e.hp <= 0) {
     e.dead = true;
     score += e.scoreVal;
+    statsKills[weaponType] = (statsKills[weaponType] || 0) + 1;
     spawnParticles(e.x, e.y - SPR * 0.6 * e.scale, '#f50', 14);
     if (Math.random() < 0.30) {
-      pickups.push({ x: e.x, y: GROUND - 36, type: 'heart' }); // ground-level drop
+      pickups.push({ x: e.x, y: GROUND - 36, type: 'heart' });
     }
   }
 }
 
+function nearestEnemy() {
+  let nearest = null, minDist = Infinity;
+  for (const e of enemies) {
+    if (e.dead) continue;
+    const d = Math.abs(e.x - player.x);
+    if (d < minDist) { minDist = d; nearest = e; }
+  }
+  return nearest;
+}
+
 function triggerAttack() {
   if (player.attackCooldown > 0) return;
+  if (player.weapon === 'gatling' && player.gatlingFrame < 3) return;
+  if (player.weapon === 'knife') {
+    if (player.phaseDir !== 0) return;
+    player.attackCooldown = WEAPON_COOL['knife'];
+    player.phaseDir = 1;
+    player.phaseFrame = 0;
+    return;
+  }
   player.attackCooldown = WEAPON_COOL[player.weapon];
 
   if (player.weapon === 'pistol') {
@@ -185,7 +216,17 @@ function triggerAttack() {
       x: player.x + player.facing * 48,
       y: player.y - SPR * 0.58,
       vx: player.facing * 26,
-      life: 28, damage: 1,
+      life: 28, damage: 1, weaponType: 'pistol',
+    });
+    playSound('laser');
+  } else if (player.weapon === 'gatling') {
+    player.state = 'gatling';
+    player.attackTimer = 5;
+    bullets.push({
+      x: player.x + player.facing * 50,
+      y: player.y - SPR * 0.58 + (Math.random() - 0.5) * 8,
+      vx: player.facing * 32,
+      life: 26, damage: 1, weaponType: 'gatling',
     });
     playSound('laser');
   } else {
@@ -203,8 +244,11 @@ function startGame() {
   playMusic('game');
   document.body.classList.add('game-on');
   score = 0; lives = 3; cameraX = 0; worldDist = 0; shakeFrames = 0; cameraFacing = 1;
+  statsTimePlayed = 0; statsHeartsPickedUp = 0; gameOverDelay = 0;
+  statsWeaponsPickedUp = { pistol: 0, hammer: 0, sword: 0, gatling: 0, knife: 0 };
+  statsKills           = { none: 0, pistol: 0, hammer: 0, sword: 0, gatling: 0, knife: 0 };
   player = { ...PLAYER_DEFAULTS };
-  enemies = []; bullets = []; pickups = []; particles = []; shootingStars = [];
+  enemies = []; bullets = []; pickups = []; particles = []; shootingStars = []; flashEffects = [];
   enemySpawnTimer = 80;
   pickupSpawnDist = 800;
 }
@@ -313,7 +357,7 @@ document.addEventListener('keydown', e => {
   if (keys[e.code]) return;
   keys[e.code] = true;
   if (phase === 'title'    && (e.code === 'Space' || e.code === 'Enter')) { startGame(); return; }
-  if (phase === 'gameover' && (e.code === 'Space' || e.code === 'Enter')) { startGame(); return; }
+  if (phase === 'gameover' && gameOverDelay <= 0 && (e.code === 'Space' || e.code === 'Enter')) { startGame(); return; }
   if ((phase === 'playing' || phase === 'paused') && e.code === 'Escape') { togglePause(); return; }
   if (phase === 'playing'  && (e.code === 'KeyF'  || e.code === 'KeyZ'))  triggerAttack();
 });
@@ -325,7 +369,7 @@ document.addEventListener('keyup', e => { keys[e.code] = false; });
 //                   9=Options/Start  12=DUp  13=DDown  14=DLeft  15=DRight
 // PS5:  Cross(0)=Block  Circle(1)=Jump  Square(2)=Attack
 let padIndex = -1;
-const pad = { left: false, right: false, jump: false, block: false };
+const pad = { left: false, right: false, jump: false, block: false, attack: false };
 const padEdge = { attack: false, start: false };
 let _padPrevAttack = false, _padPrevStart = false;
 
@@ -349,6 +393,7 @@ function pollGamepad() {
   const attackNow = btn(2) || btn(5); // Square or RB
   const startNow  = btn(9) || btn(8); // Options/Start or Select
 
+  pad.attack = attackNow;
   padEdge.attack = attackNow && !_padPrevAttack;
   padEdge.start  = startNow  && !_padPrevStart;
   _padPrevAttack = attackNow;
@@ -356,7 +401,7 @@ function pollGamepad() {
 }
 
 // ─── Input: Touch ─────────────────────────────────────────────────────────────
-const touch = { left: false, right: false, jump: false, block: false };
+const touch = { left: false, right: false, jump: false, block: false, attack: false };
 
 function bindTouchBtn(id, onDown, onUp) {
   const el = document.getElementById(id);
@@ -422,20 +467,20 @@ document.addEventListener('touchcancel', e => {
 
 bindTouchBtn('btn-jump',   () => { touch.jump  = true; }, () => { touch.jump  = false; });
 bindTouchBtn('btn-block',  () => { touch.block = true; }, () => { touch.block = false; });
-bindTouchBtn('btn-attack', () => { triggerAttack();     }, () => {});
+bindTouchBtn('btn-attack', () => { touch.attack = true; triggerAttack(); }, () => { touch.attack = false; });
 bindTouchBtn('btn-pause',  () => { if (phase === 'playing' || phase === 'paused') togglePause(); }, () => {});
 
 // Tap canvas background to start from title / game-over
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
   if (phase === 'title')         { playMusic('title'); startGame(); }
-  else if (phase === 'gameover') startGame();
+  else if (phase === 'gameover' && gameOverDelay <= 0) startGame();
 }, { passive: false });
 
 function isLeft()  { return keys['ArrowLeft']  || keys['KeyA']  || pad.left  || touch.left;  }
 function isRight() { return keys['ArrowRight'] || keys['KeyD']  || pad.right || touch.right; }
 function isJump()  { return keys['ArrowUp'] || keys['KeyW'] || keys['Space'] || pad.jump || touch.jump; }
-function isBlock() { return (keys['ShiftLeft'] || keys['ShiftRight'] || pad.block || touch.block) && player.onGround && player.attackTimer <= 0; }
+function isShieldHeld() { return keys['ShiftLeft'] || keys['ShiftRight'] || pad.block || touch.block; }
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 function update() {
@@ -445,16 +490,18 @@ function update() {
   if (phase === 'title' && anyPadInput) playMusic('title');
 
   if (padEdge.start) {
-    if (phase === 'title' || phase === 'gameover') { startGame(); return; }
+    if (phase === 'title' || (phase === 'gameover' && gameOverDelay <= 0)) { startGame(); return; }
     if (phase === 'playing' || phase === 'paused') { togglePause(); return; }
   }
-  if (padEdge.attack && (phase === 'title' || phase === 'gameover')) { startGame(); return; }
+  if (padEdge.attack && (phase === 'title' || (phase === 'gameover' && gameOverDelay <= 0))) { startGame(); return; }
 
   // Shooting stars (always update so they finish even on pause transition)
   for (const s of shootingStars) { s.x += s.vx; s.y += s.vy; s.life--; }
   shootingStars = shootingStars.filter(s => s.life > 0);
 
+  if (phase === 'gameover' && gameOverDelay > 0) gameOverDelay--;
   if (phase !== 'playing') return;
+  statsTimePlayed++;
   if (shakeFrames > 0) shakeFrames--;
 
   // Spawn occasional shooting stars
@@ -468,24 +515,74 @@ function update() {
 
   if (padEdge.attack) triggerAttack();
 
-  // Horizontal movement
-  const moving = isLeft() || isRight();
-  if (isLeft())       { player.vx = -WALK_SPEED; player.facing = -1; }
-  else if (isRight()) { player.vx =  WALK_SPEED; player.facing =  1; }
-  else                  player.vx = 0;
-
-  if (isJump() && player.onGround) {
-    player.vy = JUMP_FORCE;
-    player.onGround = false;
+  // Gatling: wind up to frame 3 while held, wind down on release, fire only at full spin
+  if (player.weapon === 'gatling') {
+    const heldAttack = keys['KeyF'] || keys['KeyZ'] || pad.attack || touch.attack;
+    if (heldAttack) {
+      player.gatlingFrame = Math.min(3, player.gatlingFrame + 0.2);
+      if (player.gatlingFrame >= 3) triggerAttack();
+    } else {
+      player.gatlingFrame = Math.max(0, player.gatlingFrame - 0.2);
+    }
+  } else {
+    player.gatlingFrame = 0;
   }
 
-  // Physics — apply stronger gravity on the way down for a weighted arc
-  const gravScale = (!player.onGround && player.vy > 0) ? FALL_MULTIPLIER : 1;
-  player.vy += GRAVITY * gravScale;
-  player.x  += player.vx;
-  player.y  += player.vy;
+  // Phase knife: advance animation, hold at peak, then reverse out
+  if (player.weapon === 'knife' && player.phaseDir !== 0) {
+    if (player.phaseHold > 0) {
+      // Holding at frame 3 on the ground — count down then reverse
+      player.phaseHold--;
+      if (player.phaseHold === 0) player.phaseDir = -1;
+    } else {
+      player.phaseFrame += player.phaseDir * 0.5;
+      if (player.phaseDir === 1 && player.phaseFrame >= 3) {
+        player.phaseFrame = 3;
+        const target = nearestEnemy();
+        if (target) {
+          const fromX = player.x;
+          const fromY = player.y - SPR * 0.5; // air position for flash line
+          player.x = target.x + player.facing * (SPR * 0.5);
+          if (!player.onGround) { player.y = GROUND; player.vy = 0; player.onGround = true; }
+          flashEffects.push({
+            x1: fromX, y1: fromY,
+            x2: target.x, y2: target.y - SPR * target.scale * 0.5,
+            life: 20, maxLife: 20,
+          });
+          damageEnemy(target, target.hp);
+          spawnParticles(target.x, target.y - SPR * 0.5 * target.scale, '#aff', 14);
+        }
+        player.phaseHold = 12;
+      } else if (player.phaseDir === -1 && player.phaseFrame <= 0) {
+        player.phaseFrame = 0;
+        player.phaseDir = 0;
+      }
+    }
+  } else if (player.weapon !== 'knife') {
+    player.phaseFrame = 0; player.phaseDir = 0; player.phaseHold = 0;
+  }
 
-  if (player.y >= GROUND) { player.y = GROUND; player.vy = 0; player.onGround = true; }
+  // Horizontal movement and physics — frozen during phase knife animation
+  const phasing = player.weapon === 'knife' && (player.phaseDir !== 0 || player.phaseHold > 0);
+  const moving = !phasing && (isLeft() || isRight());
+  if (!phasing) {
+    if (isLeft())       { player.vx = -WALK_SPEED; player.facing = -1; }
+    else if (isRight()) { player.vx =  WALK_SPEED; player.facing =  1; }
+    else                  player.vx = 0;
+
+    if (isJump() && player.onGround) {
+      player.vy = JUMP_FORCE;
+      player.onGround = false;
+    }
+
+    // Physics — apply stronger gravity on the way down for a weighted arc
+    const gravScale = (!player.onGround && player.vy > 0) ? FALL_MULTIPLIER : 1;
+    player.vy += GRAVITY * gravScale;
+    player.x  += player.vx;
+    player.y  += player.vy;
+
+    if (player.y >= GROUND) { player.y = GROUND; player.vy = 0; player.onGround = true; }
+  }
 
   // Hard world left wall
   if (player.x < 60) player.x = 60;
@@ -510,12 +607,28 @@ function update() {
     if (player.attackTimer <= 0) player.state = 'idle';
   }
   if (player.attackTimer <= 0) {
-    if (!player.onGround)       player.state = 'jump';
-    else if (isBlock())         { player.state = 'block'; player.blocking = true; }
-    else if (moving)            { player.state = 'walk'; player.walkCycle += 0.13; }
-    else                          player.state = 'idle';
-    if (player.state !== 'block') player.blocking = false;
+    if (!player.onGround)  player.state = 'jump';
+    else if (moving)       { player.state = 'walk'; player.walkCycle += 0.13; }
+    else                     player.state = 'idle';
   }
+
+  // Force field: drain while held, cooldown starts on release (or on depletion)
+  if (player.fieldCooldown > 0) {
+    if (--player.fieldCooldown === 0) player.fieldTimer = 180; // recharge after cooldown
+    player.blocking = false;
+  } else if (isShieldHeld() && player.fieldTimer > 0) {
+    player.blocking = true;
+    if (--player.fieldTimer <= 0) {
+      player.fieldTimer = 0;
+      player.fieldCooldown = 120; // depleted — 2s cooldown
+    }
+  } else {
+    player.blocking = false;
+    if (!isShieldHeld() && player.fieldTimer < 180) {
+      player.fieldCooldown = 120; // released early — cooldown starts immediately
+    }
+  }
+
   if (player.attackCooldown > 0) player.attackCooldown--;
   if (player.invincible > 0)     player.invincible--;
   player.animFrame = calcAnimFrame(player);
@@ -561,18 +674,23 @@ function update() {
     if (b.vy !== undefined) { b.vy += GRAVITY; b.y += b.vy; }
     b.life--;
     if (b.isEnemy) {
-      if (player.invincible <= 0 && Math.abs(b.x - player.x) < 35 && Math.abs(b.y - (player.y - SPR * 0.5)) < SPR * 0.55) {
-        const dmgMult = player.blocking ? 0.25 : 1;
-        player.hp -= b.damage * dmgMult;
-        player.invincible = 35;
-        shakeFrames = 6;
-        b.life = 0;
-        playSound('player_hit');
-        if (player.hp <= 0) {
-          lives--;
-          if (lives <= 0) { phase = 'gameover'; playMusic(null); document.body.classList.remove('game-on'); return; }
-          player = { ...PLAYER_DEFAULTS, x: cameraX + 120, y: GROUND, invincible: 75 };
-          return;
+      if (Math.abs(b.x - player.x) < 35 && Math.abs(b.y - (player.y - SPR * 0.5)) < SPR * 0.55) {
+        if (player.blocking) {
+          // Force field absorbs the bullet
+          b.life = 0;
+          spawnParticles(b.x, b.y, '#aff', 6);
+        } else if (player.invincible <= 0) {
+          player.hp -= b.damage;
+          player.invincible = 35;
+          shakeFrames = 6;
+          b.life = 0;
+          playSound('player_hit');
+          if (player.hp <= 0) {
+            lives--;
+            if (lives <= 0) { phase = 'gameover'; gameOverDelay = 180; playMusic(null); document.body.classList.remove('game-on'); return; }
+            player = { ...PLAYER_DEFAULTS, x: cameraX + 120, y: GROUND, invincible: 75 };
+            return;
+          }
         }
       }
     } else {
@@ -580,7 +698,7 @@ function update() {
         if (e.dead) continue;
         const eSize = SPR * e.scale;
         if (Math.abs(b.x - e.x) < eSize * 0.45 && Math.abs(b.y - (e.y - eSize * 0.5)) < eSize * 0.5) {
-          damageEnemy(e, b.damage);
+          damageEnemy(e, b.damage, b.weaponType);
           b.life = 0;
           break;
         }
@@ -589,15 +707,19 @@ function update() {
   }
   bullets = bullets.filter(b => b.life > 0);
 
-  // Pickups — walk over to grab
+  // Pickups — walk over to grab (blocked during phase knife animation)
   for (let i = pickups.length - 1; i >= 0; i--) {
     const p = pickups[i];
+    if (player.phaseDir !== 0 || player.phaseHold > 0) break;
     if (Math.abs(player.x - p.x) < 55 && Math.abs((player.y - 60) - p.y) < 55) {
       if (p.type === 'heart') {
         player.hp = Math.min(player.maxHp, player.hp + 3);
+        statsHeartsPickedUp++;
         spawnParticles(p.x, p.y - 40, '#f55', 10);
       } else {
         player.weapon = p.type;
+        statsWeaponsPickedUp[p.type] = (statsWeaponsPickedUp[p.type] || 0) + 1;
+        score += 50; // points for collecting weapon orb
         spawnParticles(p.x, p.y - 40, WEAPON_COLOR[p.type], 10);
       }
       pickups.splice(i, 1);
@@ -610,6 +732,10 @@ function update() {
     p.vy += 0.36; p.life--;
   }
   particles = particles.filter(p => p.life > 0);
+
+  // Flash effects
+  for (const f of flashEffects) f.life--;
+  flashEffects = flashEffects.filter(f => f.life > 0);
 
   // Prune enemies
   enemies = enemies.filter(e => !e.dead && e.x > cameraX - 300);
@@ -632,6 +758,12 @@ function calcAnimFrame(p) {
     if (p.vy <=  1)  return 2; // apex / flip
     return 3;                   // descending
   }
+  if (p.weapon === 'knife' && p.phaseFrame > 0) {
+    return Math.min(3, Math.floor(p.phaseFrame)); // 0→1→2→3 then reverse
+  }
+  if (p.weapon === 'gatling' && p.gatlingFrame > 0) {
+    return Math.min(3, Math.floor(p.gatlingFrame)); // 0→1→2→3, holds at 3 while wound up
+  }
   if (p.attackTimer > 0) {
     // Spreads 4 frames evenly across the full attack window.
     // ATTACK_ANIM_DURATION must match attackTimer in triggerAttack().
@@ -645,9 +777,9 @@ function calcAnimFrame(p) {
 }
 
 // ─── Draw helpers ─────────────────────────────────────────────────────────────
-function drawBg() {
+function drawBgBack() {
   const layers = [imgs.bg4, imgs.bg3, imgs.bg2, imgs.bg1];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 3; i++) { // bg4, bg3, bg2 only — bg1 drawn in front later
     const speed  = PARALLAX_SPEEDS[i];
     const offset = -(cameraX * speed) % BG_W;
     for (let t = -1; t <= 2; t++) {
@@ -672,6 +804,14 @@ function drawBg() {
       }
       ctx.restore();
     }
+  }
+}
+
+function drawBgFront() {
+  const speed  = PARALLAX_SPEEDS[3]; // bg1 — foreground layer
+  const offset = -(cameraX * speed) % BG_W;
+  for (let t = -1; t <= 2; t++) {
+    ctx.drawImage(imgs.bg1, Math.round(offset + t * BG_W), 0, BG_W, H);
   }
 }
 
@@ -725,6 +865,98 @@ function drawEnemies() {
     ctx.fillStyle = '#300'; ctx.fillRect(bx, by, bw, 5);
     ctx.fillStyle = '#e33'; ctx.fillRect(bx, by, bw * (e.hp / e.maxHp), 5);
   }
+}
+
+function drawForceField() {
+  if (!player.blocking) return;
+  const sx  = player.x - cameraX;
+  const cy  = player.y - SPR * 0.5;   // mid-body centre
+  const r   = 70;
+  const t   = Date.now() / 350;
+  const pulse  = 0.75 + Math.sin(t * 3) * 0.2;
+  const charge = player.fieldTimer / 180;
+  const rimA   = Math.min(1, 0.85 * pulse + (charge < 0.25 ? (0.25 - charge) * 3 : 0));
+
+  ctx.save();
+
+  // ── Body fill — off-centre radial gradient for sphere lighting ──
+  const fill = ctx.createRadialGradient(sx - r * 0.28, cy - r * 0.32, r * 0.05,
+                                         sx,             cy,            r);
+  fill.addColorStop(0,   `rgba(220,248,255,${0.22 * pulse * charge})`);
+  fill.addColorStop(0.45,`rgba(150,215,255,${0.08 * charge})`);
+  fill.addColorStop(0.8, `rgba(100,185,255,${0.04 * charge})`);
+  fill.addColorStop(1,   'rgba(80,160,255,0.00)');
+  ctx.beginPath();
+  ctx.arc(sx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
+
+  // ── Shadow gradient (bottom-right, opposing the specular) ──
+  const shadow = ctx.createRadialGradient(sx + r * 0.3, cy + r * 0.35, r * 0.1,
+                                          sx,            cy,            r);
+  shadow.addColorStop(0,   'rgba(10,40,180,0.00)');
+  shadow.addColorStop(0.5, `rgba(8,30,140,${0.10 * charge})`);
+  shadow.addColorStop(1,   `rgba(4,15,100,${0.22 * pulse * charge})`);
+  ctx.beginPath();
+  ctx.arc(sx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = shadow;
+  ctx.fill();
+
+  // ── Outer rim ──
+  ctx.beginPath();
+  ctx.arc(sx, cy, r, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(160,228,255,${rimA * charge})`;
+  ctx.shadowColor = '#8df';
+  ctx.shadowBlur  = 22;
+  ctx.lineWidth   = 2 + pulse * 0.5;
+  ctx.stroke();
+
+  // ── Equator band — squashed ellipse through centre for sphere depth ──
+  ctx.beginPath();
+  ctx.ellipse(sx, cy, r, r * 0.22, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(160,228,255,${rimA * charge * 0.45})`;
+  ctx.shadowBlur  = 10;
+  ctx.lineWidth   = 1.5;
+  ctx.stroke();
+
+  // ── Specular highlight — small bright oval upper-left ──
+  const hx = sx - r * 0.28, hy = cy - r * 0.34;
+  const spec = ctx.createRadialGradient(hx, hy, 0, hx, hy, r * 0.28);
+  spec.addColorStop(0, `rgba(255,255,255,${0.55 * pulse * charge})`);
+  spec.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.beginPath();
+  ctx.ellipse(hx, hy, r * 0.18, r * 0.11, -0.5, 0, Math.PI * 2);
+  ctx.fillStyle = spec;
+  ctx.shadowBlur = 0;
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawFlashEffects() {
+  if (flashEffects.length === 0) return;
+  ctx.save();
+  for (const f of flashEffects) {
+    const t = f.life / f.maxLife;
+    ctx.globalAlpha = t;
+    ctx.lineWidth = 2 + t * 4;
+    ctx.strokeStyle = '#fff';
+    ctx.shadowColor = '#aff';
+    ctx.shadowBlur = 24 * t;
+    ctx.beginPath();
+    ctx.moveTo(f.x1 - cameraX, f.y1);
+    ctx.lineTo(f.x2 - cameraX, f.y2);
+    ctx.stroke();
+    // second pass, thinner bright core
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#aff';
+    ctx.shadowBlur = 8 * t;
+    ctx.beginPath();
+    ctx.moveTo(f.x1 - cameraX, f.y1);
+    ctx.lineTo(f.x2 - cameraX, f.y2);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawBullets() {
@@ -875,23 +1107,84 @@ function drawTitle() {
 }
 
 function drawGameOver() {
-  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillStyle = 'rgba(0,0,0,0.84)';
   ctx.fillRect(0, 0, W, H);
-
   ctx.textAlign = 'center';
-  ctx.shadowColor = '#f33'; ctx.shadowBlur = 30;
+
+  // Title
+  ctx.shadowColor = '#f33'; ctx.shadowBlur = 28;
   ctx.fillStyle = '#f55';
-  ctx.font = 'bold 52px monospace';
-  ctx.fillText('GAME OVER', W / 2, H / 2 - 50);
+  ctx.font = 'bold 46px monospace';
+  ctx.fillText('GAME OVER', W / 2, 62);
+
+  // Score
   ctx.shadowBlur = 0;
-
   ctx.fillStyle = '#ffd';
-  ctx.font = '26px monospace';
-  ctx.fillText(`Score: ${score}`, W / 2, H / 2 + 10);
+  ctx.font = 'bold 24px monospace';
+  ctx.fillText(`Score: ${score}`, W / 2, 100);
 
-  ctx.font = '16px monospace';
-  ctx.fillStyle = '#8df';
-  ctx.fillText('Press  SPACE  or  ENTER  to Retry', W / 2, H / 2 + 60);
+  // Time + hearts
+  const totalSec = Math.floor(statsTimePlayed / 60);
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  ctx.fillStyle = '#9cf';
+  ctx.font = '14px monospace';
+  ctx.fillText(`Time: ${mins}:${secs.toString().padStart(2,'0')}   ·   Hearts: ${statsHeartsPickedUp}`, W / 2, 126);
+
+  // Divider
+  ctx.strokeStyle = 'rgba(100,160,255,0.3)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(60, 138); ctx.lineTo(W - 60, 138); ctx.stroke();
+
+  // Table header
+  const C1 = 200, C2 = 490, C3 = 680; // column centres
+  ctx.fillStyle = '#adf';
+  ctx.font = 'bold 12px monospace';
+  ctx.fillText('WEAPON',     C1, 158);
+  ctx.fillText('PICKED UP',  C2, 158);
+  ctx.fillText('KILLS',      C3, 158);
+
+  // Sub-divider
+  ctx.beginPath(); ctx.moveTo(60, 165); ctx.lineTo(W - 60, 165); ctx.stroke();
+
+  // Rows
+  const weapons = [
+    { key: 'none',    label: 'Punch'   },
+    { key: 'pistol',  label: 'Pistol'  },
+    { key: 'hammer',  label: 'Hammer'  },
+    { key: 'sword',   label: 'Sword'   },
+    { key: 'gatling', label: 'Gatling' },
+    { key: 'knife',   label: 'Knife'   },
+  ];
+
+  let rowY = 185;
+  ctx.font = '13px monospace';
+  for (const w of weapons) {
+    const picked = statsWeaponsPickedUp[w.key] ?? 0;
+    const kills  = statsKills[w.key] ?? 0;
+    const dim = w.key !== 'none' && picked === 0 && kills === 0;
+    ctx.fillStyle = dim ? '#445' : '#ddf';
+    ctx.fillText(w.label,                           C1, rowY);
+    ctx.fillText(w.key === 'none' ? '—' : picked,   C2, rowY);
+    ctx.fillText(kills,                              C3, rowY);
+    rowY += 22;
+  }
+
+  // Bottom divider
+  ctx.strokeStyle = 'rgba(100,160,255,0.3)';
+  ctx.beginPath(); ctx.moveTo(60, rowY + 2); ctx.lineTo(W - 60, rowY + 2); ctx.stroke();
+
+  // Orb note
+  ctx.fillStyle = '#678';
+  ctx.font = '11px monospace';
+  ctx.fillText('+50 pts per weapon orb collected', W / 2, rowY + 18);
+
+  // Retry prompt — only after delay, blinking
+  if (gameOverDelay <= 0 && Math.floor(Date.now() / 550) % 2 === 0) {
+    ctx.fillStyle = '#8df';
+    ctx.font = '14px monospace';
+    ctx.fillText('SPACE  /  ENTER  to Play Again', W / 2, rowY + 44);
+  }
+
   ctx.textAlign = 'left';
 }
 
@@ -913,7 +1206,7 @@ function drawPause() {
 // ─── Main loop ────────────────────────────────────────────────────────────────
 function draw() {
   ctx.save();
-  if (shakeFrames > 0) {
+  if (shakeFrames > 0 && phase !== 'gameover') {
     ctx.translate((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6);
   }
 
@@ -922,12 +1215,15 @@ function draw() {
   if (phase === 'title') {
     drawTitle();
   } else {
-    drawBg();
+    drawBgBack();
     drawPickups();
     drawParticles();
+    drawFlashEffects();
     drawBullets();
     drawEnemies();
     drawPlayer();
+    drawForceField();
+    drawBgFront();   // bg1 foreground layer draws over gameplay elements
     drawHUD();
     if (phase === 'gameover') drawGameOver();
     if (phase === 'paused')   drawPause();
